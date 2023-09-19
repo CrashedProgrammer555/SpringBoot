@@ -1,6 +1,7 @@
 package mo.daoyi.spring.utils;
 
 
+import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPoolConfig;
 
@@ -15,6 +16,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 文件的上传、分片上传、秒传、断点续传
+ */
+@Slf4j
 public class FileUploader {
     private static final int BUFFER_SIZE = 1024 * 1024; // 1MB
     private static final int CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
@@ -28,29 +33,28 @@ public class FileUploader {
         File file = new File(filePath);
         String fileId = getFileId(file);
         JedisUtil jedisPoolConfig = new JedisUtil();
-//        Jedis jedis = new Jedis(REDIS_HOST, REDIS_PORT);
 
         if (jedisPoolConfig.exists(REDIS_KEY_PREFIX + fileId)) {
             // File already uploaded, return file ID
-            System.out.println("File already uploaded. File ID: " + fileId);
+            log.info("File already uploaded. File ID: " + fileId);
             return;
         }
 
-        // Calculate MD5 checksum
+        // MD5 校验
         String md5 = calculateMD5(file);
 
-        // Check if file already exists on server
+        // 检查文件是否已存在服务器中
         Map<String, String> params = new HashMap<>();
         params.put("md5", md5);
         String response = sendHttpRequest(UPLOAD_URL + "?action=check", params);
         if (!response.equals("0")) {
             // File already exists, return file ID
             jedisPoolConfig.set(REDIS_KEY_PREFIX + fileId, response);
-            System.out.println("File already exists. File ID: " + response);
+            log.info("File already exists. File ID: " + response);
             return;
         }
 
-        // Upload file
+        // 上传文件
         String uploadId = UUID.randomUUID().toString();
         int chunkCount = (int) Math.ceil((double) file.length() / CHUNK_SIZE);
         for (int i = 0; i < chunkCount; i++) {
@@ -62,11 +66,11 @@ public class FileUploader {
             String chunkKey = REDIS_KEY_PREFIX + chunkId;
 
             if (jedisPoolConfig.exists(chunkKey)) {
-                // Chunk already uploaded, skip
+                // 分片已上传, skip
                 continue;
             }
 
-            // Read chunk data
+            // 读取分片信息
             byte[] buffer = new byte[BUFFER_SIZE];
             int bytesRead = 0;
             try (InputStream input = new FileInputStream(file)) {
@@ -74,7 +78,7 @@ public class FileUploader {
                 bytesRead = input.read(buffer, 0, (int) size);
             }
 
-            // Upload chunk
+            // 上传分片
             params.clear();
             params.put("md5", md5);
             params.put("chunkIndex", String.valueOf(chunkIndex));
@@ -87,7 +91,7 @@ public class FileUploader {
             if (!responseCode.equals("200")) {
                 // Upload failed, retry later
                 jedisPoolConfig.delete(chunkKey);
-                System.out.println("Upload failed. Chunk ID: " + chunkId);
+                log.info("Upload failed. Chunk ID: " + chunkId);
                 return;
             }
 
@@ -104,13 +108,13 @@ public class FileUploader {
         if (!response.equals("0")) {
             // Upload failed, retry later
             jedisPoolConfig.delete(REDIS_KEY_PREFIX + uploadId);
-            System.out.println("Upload failed. Upload ID: " + uploadId);
+            log.info("Upload failed. Upload ID: " + uploadId);
             return;
         }
 
         // Mark file as uploaded
         jedisPoolConfig.set(REDIS_KEY_PREFIX + fileId, uploadId);
-        System.out.println("Upload successful. File ID: " + fileId);
+        log.info("Upload successful. File ID: " + fileId);
     }
 
     private static String getFileId(File file) {
