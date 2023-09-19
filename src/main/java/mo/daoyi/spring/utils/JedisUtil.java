@@ -1,12 +1,14 @@
 package mo.daoyi.spring.utils;
 
 import com.alibaba.fastjson2.JSON;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 @Component
+@Slf4j
 public class JedisUtil {
 
     @Autowired
@@ -197,15 +199,15 @@ public class JedisUtil {
         if (jedis.exists(key)) {
             jedis.set(key, value);
             if (value.equals(jedis.get(key))) {
-                System.out.println("修改数据成功");
+                log.info("修改数据成功");
                 return true;
             } else {
                 System.out.println("修改数据失败");
                 return false;
             }
         } else {
-            System.out.println(key + "不存在");
-            System.out.println("若要新增数据请使用set()方法");
+            log.info(key + "不存在");
+            log.info("若要新增数据请使用set()方法");
             return false;
         }
     }
